@@ -52,8 +52,13 @@ pip install -r requirements.txt
 
 Copiar el archivo `.env.example` con el nombre `.env`:
 
+En Windows:
 ```
 copy .env.example .env
+```
+En Mac o Linux:
+```
+cp .env.example .env
 ```
 
 Con XAMPP recién instalado no hace falta cambiar nada: el usuario `root` viene sin contraseña.
@@ -72,13 +77,18 @@ Se abre el navegador en `http://localhost:8501`.
 
 1. En la pestaña **Crear cuenta**, elegir un nombre de usuario, una contraseña y una escudería.
    La partida arranca con 50.000.000 de presupuesto y sin pilotos.
-2. En **Mercado y tienda**, contratar 2 pilotos libres.
-3. Antes de cada carrera, se pueden comprar componentes que restan segundos al tiempo.
-   Cada componente dura una cantidad limitada de carreras.
-4. En **Carreras**, correr las 4 carreras de la temporada, de a una y en orden.
-5. Al terminar la carrera 4, la partida finaliza. En **Ranking** se comparan los puntos de todos los usuarios.
+2. En **Mercado y tienda**, comparar los pilotos libres y contratar 2.
+3. Antes de cada carrera, en la misma pestaña, se pueden comprar componentes que restan segundos
+   al tiempo. Cada componente dura una cantidad limitada de carreras, y no se puede volver a comprar
+   mientras siga activo. En **Mi equipo** se ve cuáles están activos.
+4. En **Carreras**, correr las 4 carreras de la temporada, de a una y en orden. Debajo del botón
+   aparece el resultado de tus pilotos en la última carrera.
+5. En **Campeonato** se ven las posiciones de escuderías y pilotos. Al terminar la carrera 4,
+   la partida finaliza y ahí aparece el resultado final.
+6. En **Ranking** se comparan los puntos de todos los usuarios.
 
-Desde **Carreras** también se puede reiniciar la temporada para volver a empezar.
+Para volver a empezar, al final de **Campeonato** está la opción **Reiniciar temporada**
+(borra resultados, compras y contratos, y devuelve el presupuesto inicial).
 
 ## Estructura del proyecto
 
@@ -94,7 +104,7 @@ simulador_f1/
 
 ## Problemas comunes
 
-- **"No se pudo conectar a la base":** revisar que MySQL esté iniciado en XAMPP
+- **"No se pudo conectar a la base de datos":** revisar que MySQL esté iniciado en XAMPP
   y que los datos de `.env` sean correctos.
 - **`ModuleNotFoundError`:** falta instalar las librerías (paso 2).
 - **Error al importar el script:** la versión de MariaDB o MySQL es anterior a la requerida
