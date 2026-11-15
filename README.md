@@ -99,3 +99,5 @@ simulador_f1/
 - **`ModuleNotFoundError`:** falta instalar las librerías (paso 2).
 - **Error al importar el script:** la versión de MariaDB o MySQL es anterior a la requerida
   (el script usa CHECK y `RANK() OVER`).
+- **Al recargar la página pide iniciar sesión otra vez:** es normal. La sesión se guarda
+  mientras la pestaña está abierta; la partida no se pierde, porque está guardada en la base.

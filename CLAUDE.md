@@ -159,6 +159,8 @@ Pilotos 1 a 12: rivales (2 por escudería). Pilotos 13 a 19: libres.
 - Las contraseñas usan SHA2 sin sal. Mejora: `bcrypt`.
 - Una sola partida por usuario. Mejora: varias partidas.
 - Contratar pilotos de escuderías rivales pagando una cláusula.
+- Al recargar la página se pierde la sesión y hay que volver a iniciar sesión (Streamlit guarda
+  el login en memoria). Mejora: sesiones persistentes con cookies, que requieren una tabla de tokens.
 
 ---
 
