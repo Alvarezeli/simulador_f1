@@ -324,12 +324,12 @@ def carreras_corridas(id_partida):
 
 def calendario(id_partida):
     """Las carreras de la temporada, con su estado para esta partida."""
-    # En DATE_FORMAT los % van dobles (%%): la consulta usa parámetros con %s,
-    # y mysql-connector tomaría un % solo como un parámetro más.
+    # Ojo: mysql-connector reemplaza cada "%s" por un parámetro, así que la consulta
+    # no puede tener ese texto en otro lado (ni en comentarios). Los % de la fecha sí van simples.
     return consultar(
         """
         SELECT ca.orden, ca.nombre, ci.nombre AS circuito, ci.pais,
-               DATE_FORMAT(ca.fecha, '%%d/%%m/%%Y') AS fecha,
+               DATE_FORMAT(ca.fecha, '%d/%m/%Y') AS fecha,
                CASE
                  WHEN EXISTS (SELECT 1 FROM resultado r
                               WHERE r.id_partida = p.id_partida AND r.id_carrera = ca.id_carrera)
@@ -385,6 +385,28 @@ def campeonato_pilotos(id_partida):
         JOIN escuderia ep  ON ep.id_escuderia = pa.id_escuderia     -- escudería del jugador
         WHERE v.id_partida = %s
         GROUP BY pl.id_piloto, pl.nombre, v.es_jugador, e.nombre, ep.nombre
+        ORDER BY posicion
+        """,
+        (id_partida,),
+    )
+
+
+def campeonato_escuderias(id_partida):
+    """Puntos de cada escudería: la suma de sus dos pilotos (sale de v_puntos)."""
+    return consultar(
+        """
+        SELECT RANK() OVER (ORDER BY SUM(v.puntos) DESC,
+                                     SUM(CASE WHEN v.posicion = 1 THEN 1 ELSE 0 END) DESC) AS posicion,
+               CASE WHEN v.es_jugador = 1 THEN CONCAT(ep.nombre, ' (vos)') ELSE e.nombre END AS equipo,
+               SUM(v.puntos) AS puntos,
+               SUM(CASE WHEN v.posicion = 1 THEN 1 ELSE 0 END) AS victorias
+        FROM v_puntos v
+        JOIN piloto pl        ON pl.id_piloto    = v.id_piloto
+        LEFT JOIN escuderia e ON e.id_escuderia  = pl.id_escuderia   -- escudería del rival
+        JOIN partida pa       ON pa.id_partida   = v.id_partida
+        JOIN escuderia ep     ON ep.id_escuderia = pa.id_escuderia   -- escudería del jugador
+        WHERE v.id_partida = %s
+        GROUP BY v.es_jugador, e.nombre, ep.nombre
         ORDER BY posicion
         """,
         (id_partida,),
@@ -477,7 +499,7 @@ BARRA_HABILIDAD = {"Habilidad": st.column_config.ProgressColumn(
 
 
 def estilo_mis_pilotos(fila):
-    """Resalta las filas de los pilotos del jugador (su equipo termina en '(vos)')."""
+    """Resalta las filas del jugador (su equipo termina en '(vos)')."""
     if "(vos)" in fila["Equipo"]:
         return ESTILO_MIO
     return ""
@@ -506,7 +528,9 @@ def main():
     id_partida = st.session_state["id_partida"]
     st.sidebar.markdown(f'👤 **{st.session_state["usuario"]}**')
     st.sidebar.markdown(f'🏎️ {st.session_state["escuderia"]}')
-    st.sidebar.button("Cerrar sesión", on_click=cerrar_sesion)
+    # Cerrar sesión va último: es lo que se hace al terminar
+    st.sidebar.divider()
+    st.sidebar.button("Cerrar sesión", on_click=cerrar_sesion, width="stretch")
 
     # Mensaje de la última acción: notificación flotante que desaparece sola
     mensaje = st.session_state.pop("mensaje", None)
@@ -529,6 +553,7 @@ def main():
     finalizada = partida["estado"] == 1
     pilotos = pilotos_de_partida(id_partida)
     siguiente = proxima_carrera(id_partida)
+    corridas = carreras_corridas(id_partida)   # la usan las pestañas Carreras y Campeonato
 
     m0, m1, m2, m3 = st.columns(4)
     m0.metric("Escudería", st.session_state["escuderia"])
@@ -542,10 +567,12 @@ def main():
     zona_aviso = st.container()
     if not finalizada and len(pilotos) < 2:
         zona_aviso.info("👋 Paso 1: contratá tus 2 pilotos en la pestaña **Mercado y tienda**. "
-                "Después podés comprar componentes y correr las carreras.")
+                        "Después podés comprar componentes y correr las carreras.")
 
-    tab_equipo, tab_mercado, tab_carreras, tab_ranking = st.tabs(
-        ["Mi equipo", "Mercado y tienda", "Carreras", "Ranking"]
+    # Las pestañas siguen el orden de una partida: armo el equipo, compro, corro,
+    # miro cómo voy en la temporada y me comparo con otros usuarios
+    tab_equipo, tab_mercado, tab_carreras, tab_campeonato, tab_ranking = st.tabs(
+        ["Mi equipo", "Mercado y tienda", "Carreras", "Campeonato", "Ranking"]
     )
 
     # ---------------- Mi equipo ----------------
@@ -641,7 +668,7 @@ def main():
             st.button("Comprar", type="primary", on_click=al_comprar,
                       disabled=componente_elegido is None)
 
-    # ---------------- Carreras ----------------
+    # ---------------- Carreras: correr y ver cómo me fue ----------------
     with tab_carreras:
         st.subheader("Calendario de la temporada")
         tabla(calendario(id_partida), {"orden": "Nº", "nombre": "Carrera", "circuito": "Circuito",
@@ -656,17 +683,11 @@ def main():
             st.button(f'🏁 Correr carrera {siguiente["orden"]}: {siguiente["nombre"]}',
                       type="primary", on_click=al_correr, disabled=len(pilotos) < 2, width="stretch")
         else:
-            campeon = campeonato_pilotos(id_partida)[0]
-            if campeon["es_jugador"] == 1:
-                st.success(f'🏆 ¡{campeon["piloto"]} es el campeón con {int(campeon["puntos"])} puntos!')
-            else:
-                st.info(f'🏆 {campeon["piloto"]} ({campeon["equipo"]}) ganó el campeonato con '
-                        f'{int(campeon["puntos"])} puntos.')
+            # Streamlit no puede cambiar de pestaña solo: avisamos dónde mirar
+            st.success("🏁 Temporada terminada. Mirá el resultado final en la pestaña **Campeonato**.")
 
-        corridas = carreras_corridas(id_partida)
-
-        # Resultado de la última carrera corrida: posición y puntos salen de v_puntos
         if corridas:
+            # Resultado de la última carrera corrida: posición y puntos salen de v_puntos
             ultima = corridas[-1]
             st.subheader(f'Última carrera: {ultima["nombre"]}')
             mis_resultados = [f for f in resultado_carrera(id_partida, ultima["id_carrera"])
@@ -678,13 +699,6 @@ def main():
                            delta_color="normal" if fila["puntos"] > 0 else "off")
             st.divider()
 
-        if corridas:
-            st.subheader("Campeonato de pilotos")
-            tabla(campeonato_pilotos(id_partida),
-                  {"posicion": "Pos", "piloto": "Piloto", "equipo": "Equipo",
-                   "puntos": "Puntos", "victorias": "Victorias"},
-                  estilo_fila=estilo_mis_pilotos)
-
             st.subheader("Resultados por carrera")
             for pestana, carrera in zip(st.tabs([c["nombre"] for c in corridas]), corridas):
                 with pestana:
@@ -693,19 +707,58 @@ def main():
                            "tiempo": "Tiempo (s)", "puntos": "Puntos"},
                           estilo_fila=estilo_mis_pilotos)
 
+    # ---------------- Campeonato: cómo voy en la temporada ----------------
+    with tab_campeonato:
+        if not corridas:
+            st.info("Todavía no corriste ninguna carrera. El campeonato arranca con tu primera carrera.")
+        else:
+            escuderias = campeonato_escuderias(id_partida)
+            mi_equipo = next(f for f in escuderias if f["equipo"].endswith("(vos)"))
+
+            if finalizada:
+                # Resultado final de la temporada
+                campeon = campeonato_pilotos(id_partida)[0]
+                if mi_equipo["posicion"] == 1:
+                    st.success(f'🏆 ¡Tu escudería ganó el campeonato con {int(mi_equipo["puntos"])} puntos!')
+                else:
+                    st.info(f'🏁 Tu escudería terminó en el puesto {mi_equipo["posicion"]} '
+                            f'con {int(mi_equipo["puntos"])} puntos.')
+                if campeon["es_jugador"] == 1:
+                    st.success(f'🏆 ¡{campeon["piloto"]} es el campeón de pilotos con '
+                               f'{int(campeon["puntos"])} puntos!')
+                else:
+                    st.caption(f'Campeón de pilotos: {campeon["piloto"]} ({campeon["equipo"]}), '
+                               f'{int(campeon["puntos"])} puntos.')
+            else:
+                st.caption(f'Después de {len(corridas)} de {partida["total_carreras"]} carreras, '
+                           f'tu escudería va {mi_equipo["posicion"]}° con {int(mi_equipo["puntos"])} puntos.')
+
+            # Escuderías a la izquierda: el jugador dirige el equipo, es su objetivo principal
+            col_esc, col_pil = st.columns(2)
+            with col_esc:
+                st.subheader("Escuderías")
+                tabla(escuderias, {"posicion": "Pos", "equipo": "Equipo",
+                                   "puntos": "Puntos", "victorias": "Victorias"},
+                      estilo_fila=estilo_mis_pilotos)
+            with col_pil:
+                st.subheader("Pilotos")
+                tabla(campeonato_pilotos(id_partida),
+                      {"posicion": "Pos", "piloto": "Piloto", "equipo": "Equipo",
+                       "puntos": "Puntos", "victorias": "Victorias"},
+                      estilo_fila=estilo_mis_pilotos)
+
+        # Zona de peligro: al final de la pestaña y lejos de "Correr carrera" (que está en otra
+        # pestaña), con título en rojo porque es la única acción que borra datos sin vuelta atrás
         st.divider()
-        # Zona de peligro: recuadro con título en rojo para que se note que la acción es destructiva
         with st.container(border=True):
             st.markdown("#### :red[⚠️ Zona de peligro: reiniciar temporada]")
-            st.caption("Borra tus resultados, compras y contratos, y devuelve el presupuesto inicial. No se puede deshacer.")
-            st.checkbox("Entiendo que se borrará mi temporada actual", key="confirmar_reinicio")
-            st.button(
-                "🔄 Reiniciar temporada",
-                on_click=al_reiniciar,
-                disabled=not st.session_state.get("confirmar_reinicio", False),
-            )
+            st.caption("Borra tus resultados, compras y contratos, y devuelve el presupuesto inicial. "
+                       "No se puede deshacer.")
+            st.checkbox("Entiendo que se borrará mi temporada", key="confirmar_reinicio")
+            st.button(":red[🔄 Reiniciar temporada]", on_click=al_reiniciar,
+                      disabled=not st.session_state.get("confirmar_reinicio", False))
 
-    # ---------------- Ranking ----------------
+    # ---------------- Ranking: cómo voy contra otros usuarios ----------------
     with tab_ranking:
         st.subheader("Ranking de usuarios")
         # El puesto lo calcula la base con RANK(), igual que las posiciones de las carreras
