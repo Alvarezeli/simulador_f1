@@ -1,0 +1,6 @@
+# Librerías de Python que necesita APP.py
+# Se instalan con: pip install -r requirements.txt
+streamlit
+mysql-connector-python
+pandas
+python-dotenv

@@ -1,0 +1,17 @@
+# Credenciales locales (nunca se suben)
+.env
+.streamlit/secrets.toml
+
+# Archivos que genera Python al ejecutar
+__pycache__/
+*.pyc
+
+# Entornos virtuales
+venv/
+.venv/
+
+# Configuración personal del editor
+.vscode/
+
+# Archivos de claude
+.claude/
