@@ -38,9 +38,12 @@ CREATE TABLE partida (
     id_escuderia INT NOT NULL,
     id_usuario INT NOT NULL UNIQUE,                     -- cada usuario tiene una sola partida
     id_temporada INT NOT NULL,
-    CONSTRAINT fk_partida_escuderia FOREIGN KEY (id_escuderia) REFERENCES escuderia(id_escuderia),
-    CONSTRAINT fk_partida_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+    CONSTRAINT fk_partida_escuderia FOREIGN KEY (id_escuderia) REFERENCES escuderia(id_escuderia)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_partida_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+       ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT fk_partida_temporada FOREIGN KEY (id_temporada) REFERENCES temporada(id_temporada)
+       ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 CREATE TABLE piloto (
@@ -50,6 +53,7 @@ CREATE TABLE piloto (
     habilidad INT NOT NULL CHECK (habilidad BETWEEN 1 AND 100),
     id_escuderia INT NULL,                              -- NULL = piloto libre de mercado
     CONSTRAINT fk_piloto_escuderia FOREIGN KEY (id_escuderia) REFERENCES escuderia(id_escuderia)
+       ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 CREATE TABLE contrato (
@@ -57,8 +61,10 @@ CREATE TABLE contrato (
     id_partida INT NOT NULL,
     id_piloto INT NOT NULL,
     sueldo_pactado DECIMAL(12,2) NOT NULL CHECK (sueldo_pactado >= 0),
-    CONSTRAINT fk_contrato_partida FOREIGN KEY (id_partida) REFERENCES partida(id_partida),
-    CONSTRAINT fk_contrato_piloto FOREIGN KEY (id_piloto) REFERENCES piloto(id_piloto),
+    CONSTRAINT fk_contrato_partida FOREIGN KEY (id_partida) REFERENCES partida(id_partida)
+       ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_contrato_piloto FOREIGN KEY (id_piloto) REFERENCES piloto(id_piloto)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT uq_partida_piloto UNIQUE (id_partida, id_piloto)   -- un piloto una vez por partida
 );
 
@@ -86,9 +92,12 @@ CREATE TABLE carrera (
     fecha DATE NOT NULL,
     id_circuito INT NOT NULL,
     id_temporada INT NOT NULL,
-    CONSTRAINT fk_carrera_circuito FOREIGN KEY (id_circuito) REFERENCES circuito(id_circuito),
-    CONSTRAINT fk_carrera_temporada FOREIGN KEY (id_temporada) REFERENCES temporada(id_temporada),
-    CONSTRAINT uq_temporada_orden UNIQUE (id_temporada, orden)
+    CONSTRAINT fk_carrera_circuito FOREIGN KEY (id_circuito) REFERENCES circuito(id_circuito)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_carrera_temporada FOREIGN KEY (id_temporada) REFERENCES temporada(id_temporada)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT uq_temporada_orden UNIQUE (id_temporada, orden),
+    CONSTRAINT uq_temporada_fecha UNIQUE (id_temporada, fecha)   -- un piloto no corre dos carreras el mismo día
 );
 
 CREATE TABLE compra (
@@ -97,9 +106,12 @@ CREATE TABLE compra (
     id_componentes INT NOT NULL,
     id_carrera INT NOT NULL,                            -- carrera ANTES de la cual se compró
     precio_pagado DECIMAL(12,2) NOT NULL CHECK (precio_pagado >= 0),
-    CONSTRAINT fk_compra_partida FOREIGN KEY (id_partida) REFERENCES partida(id_partida),
-    CONSTRAINT fk_compra_componentes FOREIGN KEY (id_componentes) REFERENCES componentes(id_componentes),
-    CONSTRAINT fk_compra_carrera FOREIGN KEY (id_carrera) REFERENCES carrera(id_carrera),
+    CONSTRAINT fk_compra_partida FOREIGN KEY (id_partida) REFERENCES partida(id_partida)
+       ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_compra_componentes FOREIGN KEY (id_componentes) REFERENCES componentes(id_componentes)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_compra_carrera FOREIGN KEY (id_carrera) REFERENCES carrera(id_carrera)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT uq_compra_partida_comp_carrera UNIQUE (id_partida, id_componentes, id_carrera)
 );
 
@@ -109,9 +121,12 @@ CREATE TABLE resultado (
     id_partida INT NULL,                                -- NULL = tiempos de rivales de la semilla
     id_carrera INT NOT NULL,
     id_piloto INT NOT NULL,
-    CONSTRAINT fk_resultado_partida FOREIGN KEY (id_partida) REFERENCES partida(id_partida),
-    CONSTRAINT fk_resultado_carrera FOREIGN KEY (id_carrera) REFERENCES carrera(id_carrera),
-    CONSTRAINT fk_resultado_piloto FOREIGN KEY (id_piloto) REFERENCES piloto(id_piloto),
+    CONSTRAINT fk_resultado_partida FOREIGN KEY (id_partida) REFERENCES partida(id_partida)
+       ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_resultado_carrera FOREIGN KEY (id_carrera) REFERENCES carrera(id_carrera)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_resultado_piloto FOREIGN KEY (id_piloto) REFERENCES piloto(id_piloto)
+       ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT uq_resultado_partida_carrera_piloto UNIQUE (id_partida, id_carrera, id_piloto)
 );
 
@@ -424,7 +439,6 @@ CREATE PROCEDURE sp_comprar_componente(IN p_partida INT, IN p_componente INT, IN
 BEGIN
     DECLARE v_presupuesto DECIMAL(12,2);
     DECLARE v_costo DECIMAL(12,2);
-    DECLARE v_activos INT;
 
     -- Si algo falla, se deshace todo
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -438,21 +452,7 @@ BEGIN
     SELECT presupuesto INTO v_presupuesto FROM partida WHERE id_partida = p_partida;
     SELECT costo INTO v_costo FROM componentes WHERE id_componentes = p_componente;
 
-    -- ¿Ya tiene ese componente activo para esta carrera? (misma condición que sp_correr_carrera)
-    SELECT COUNT(*) INTO v_activos
-    FROM compra cm
-    JOIN componentes co ON co.id_componentes = cm.id_componentes
-    JOIN carrera cc     ON cc.id_carrera     = cm.id_carrera   -- carrera de la compra anterior
-    JOIN carrera cn     ON cn.id_carrera     = p_carrera       -- carrera de la compra nueva
-    WHERE cm.id_partida = p_partida
-      AND cm.id_componentes = p_componente
-      AND cn.orden - cc.orden >= 0
-      AND cn.orden - cc.orden < co.durabilidad;
-
-    IF v_activos > 0 THEN
-        ROLLBACK;
-        SELECT 'Compra cancelada: ese componente todavía está activo' AS resultado;
-    ELSEIF v_presupuesto >= v_costo THEN
+    IF v_presupuesto >= v_costo THEN
         UPDATE partida SET presupuesto = presupuesto - v_costo WHERE id_partida = p_partida;
         INSERT INTO compra (id_partida, id_componentes, id_carrera, precio_pagado)
         VALUES (p_partida, p_componente, p_carrera, v_costo);
@@ -541,11 +541,8 @@ DELIMITER ;
 CALL sp_comprar_componente(3, 1, 1);
 
 -- CASO B (ROLLBACK): Lucía intenta comprar otra vez la Aerodinámica antes de la carrera 1.
--- La que compró antes de la carrera 1 todavía está activa (dura 3 carreras), así que
--- el procedimiento rechaza la compra antes de tocar la plata y hace ROLLBACK.
--- Lucía sigue con 23.000.000 y no se registra ninguna compra nueva.
+-- El UPDATE descuenta la plata, pero el INSERT falla porque esa compra ya existe (UNIQUE).
+-- El ROLLBACK devuelve la plata: Lucía sigue con 23.000.000.
 CALL sp_comprar_componente(2, 2, 1);
 
 SELECT id_partida, presupuesto FROM partida;
-
-
